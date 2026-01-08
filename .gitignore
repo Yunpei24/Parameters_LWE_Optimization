@@ -1,0 +1,17 @@
+venv
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.idea/
+.vscode/
+node_modules/
+dist/
+*.log
+coverage/
+*.sqlite3
+*.egg-info/
+*.iml
+*.swp
+*.swo
+phd_efl.md
