@@ -1,7 +1,11 @@
 # Core dependencies for Collaborative Cryptographic Optimization
 
 # Multi-Agent Simulation Framework
-mesa>=2.0.0
+# mesa>=2.0.0
+--pre
+mesa[viz]
+solara
+networkx
 
 # Numerical computing
 numpy>=1.21.0

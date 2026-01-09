@@ -26,6 +26,8 @@ This project implements a **multi-agent simulation** to optimize parameters for 
 - ✅ Multi-agent particle swarm optimization (PSO)
 - ✅ Multiple communication topologies (ring, random, all-to-all)
 - ✅ Real-time visualization with MESA
+- ✅ **DataCollector & Comprehensive Plots** - Track fitness, diversity, convergence
+- ✅ **Interactive Solara Visualization** - Modern web-based interface
 - ✅ Security vs. Performance trade-off analysis
 - ✅ Interactive parameter tuning
 
@@ -172,7 +174,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install mesa numpy matplotlib pandas
+pip install -r requirements.txt
 
 # Verify installation
 python -c "import mesa; print(f'MESA version: {mesa.__version__}')"
@@ -192,13 +194,13 @@ python run.py
 
 This will:
 - Run 100 steps of optimization
-- Generate plots of results
-- Save plots as PNG files
-- Print optimization summary
+- Generate comprehensive plots of results
+- Save plots as PNG files (optimization_results.png)
+- Print optimization summary with best parameters
 
-### 2. Interactive Visualization (Browser)
+### 2. Interactive Visualization - Mesa Server (Browser)
 
-Launch the web-based interface:
+Launch the traditional Mesa web-based interface:
 
 ```bash
 python server.py
@@ -216,7 +218,29 @@ http://127.0.0.1:8521/
 - Start/Stop/Reset simulation
 - Watch real-time convergence
 
-### 3. Custom Experiments
+### 3. Interactive Visualization - Solara (Modern UI) ⭐ NEW
+
+Launch the modern Solara interactive interface:
+
+```bash
+solara run app.py
+```
+
+Then open your browser to:
+```
+http://localhost:8765/
+```
+
+**Features:**
+- ✨ Modern, responsive UI
+- 📊 Real-time charts and metrics
+- 🎮 Interactive controls (Reset, Step, Run/Pause)
+- 📈 Live fitness evolution tracking
+- 🔄 Population diversity monitoring
+- 📉 Convergence rate visualization
+- ⚙️ Parameter evolution over time
+
+### 4. Custom Experiments
 
 #### Example: Compare Topologies
 
