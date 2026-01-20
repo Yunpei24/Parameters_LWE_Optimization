@@ -86,57 +86,108 @@ class ExplorerAgent(mesa.Agent):
             'sigma': 0.15 * (bounds['sigma'][1] - bounds['sigma'][0])  # ~0.45 per step (reduced from 0.33)
         }
         
-    def evaluate_fitness(self):
+    def check_correctness(self, n, q, sigma):
         """
-        Evaluate the fitness of current parameters.
+        Check if the parameters allow for correct decryption.
         
-        Fitness = α * Security - β * Cost (normalized to 0-100 scale)
+        Condition for LWE/Regev correctness (simplified):
+        The error noise must remain smaller than q/4 (roughly) to be distinguishable.
+        Standard heuristic: q > 4 * sigma * sqrt(n)
+        
+        Args:
+            n, q, sigma: LWE parameters
+            
+        Returns:
+            bool: True if parameters valid, False otherwise
+        """
+        min_q_required = 4 * sigma * math.sqrt(n)
+        return q > min_q_required
+
+    def estimate_security_lindner_peikert(self, n, q, sigma):
+        """
+        Scientific estimation of security bits using Lindner-Peikert approximation.
+        
+        This models the cost of the BKZ attack (Root Hermite Factor delta).
+        
+        Relationships modeled:
+        - Security INCREASES if n increases (dimension)
+        - Security INCREASES if sigma increases (noise makes problem harder)
+        - Security DECREASES if q increases (lattice becomes more sparse/orthogonal)
         
         Returns:
-            float: Fitness value (higher is better)
+            float: Estimated security in bits
+        """
+        if sigma <= 0 or q <= 0 or n <= 0:
+            return 0
+            
+        # Avoid division by zero or log errors
+        try:
+            log2_q = math.log2(q)
+            log2_ratio = math.log2(q / sigma)
+            
+            # Estimate Log2(delta) - Root Hermite Factor logarithm
+            # Heuristic derived from Lindner-Peikert and BKZ cost models
+            log2_delta = (log2_ratio ** 2) / (4 * n * log2_q)
+            
+            # Convert delta to bits of security
+            # Formula: bits ~ 1.8 / log2(delta) - 110
+            if log2_delta <= 0:
+                return 0
+                
+            security_bits = (1.8 / log2_delta) - 110
+            
+            # Clamp reasonable bounds for physics (0 to ~500 bits)
+            return max(0, security_bits)
+            
+        except ValueError:
+            return 0
+
+    def evaluate_fitness(self):
+        """
+        Evaluate the fitness of current parameters using realistic crypto constraints.
+        
+        1. Correctness Check: If decryption fails, impose severe penalty.
+        2. Security: Uses Lindner-Peikert analytic estimation.
+        3. Cost: Standard complexity metric.
+        
+        Fitness = (α * Security_Score) - (β * Cost_Score)   [if valid]
+        Fitness = -100                                      [if invalid]
+        
+        Returns:
+            float: Fitness value
         """
         n = self.current_params['n']
         q = self.current_params['q']
         sigma = self.current_params['sigma']
         
-        # Security estimation (simplified Lattice estimator)
-        # Based on BKZ block size needed for attack
-        # Security roughly scales with n * log(q) / log(sigma)
-        # NOTE: This formula gives values in range ~500-9000 bits (not realistic but used for optimization)
-        security_bits = (n * math.log2(q)) / (2 * math.log2(sigma) + 1)
+        # 1. Check Correctness (Validity constraint)
+        if not self.check_correctness(n, q, sigma):
+            return -100.0  # Heavy penalty for invalid crypto parameters
         
-        # Performance cost (operations scale with n^2 * log(q))
+        # 2. Scientific Security Estimation
+        security_bits = self.estimate_security_lindner_peikert(n, q, sigma)
+        
+        # 3. Performance cost (operations scale with n^2 * log(q))
         cost = (n ** 2) * math.log2(q)
 
-        # Calculate normalization bounds based on actual parameter space
-        # Using the model bounds to get realistic min/max values
+        # Normalization Bounds
+        # Security target: 80 bits (min) to 256 bits (high)
+        # We normalize 0-300 bits to 0-1
+        sec_norm = max(0, min(1, security_bits / 300.0))
+        
+        # Cost bounds based on parameter space
         bounds = self.model.bounds
+        C_MIN = bounds['n'][0]**2 * math.log2(bounds['q'][0])  # n=256
+        C_MAX = bounds['n'][1]**2 * math.log2(bounds['q'][1])  # n=2048
+        cost_norm = max(0, min(1, (cost - C_MIN) / (C_MAX - C_MIN)))
 
-        # S_MIN = self.model.bounds['n'][0] * math.log2(self.model.bounds['q'][0]) / (2 * math.log2(self.model.bounds['sigma'][1]) + 1)
-        # S_MAX = self.model.bounds['n'][1] * math.log2(self.model.bounds['q'][1]) / (2 * math.log2(self.model.bounds['sigma'][0]) + 1)
-        # C_MIN = self.model.bounds['n'][0]**2 * math.log2(self.model.bounds['q'][0])
-        # C_MAX = self.model.bounds['n'][1]**2 * math.log2(self.model.bounds['q'][1])
+        # Combined fitness
+        alpha = self.model.alpha
+        beta = self.model.beta
         
-        # Minimum security: smallest n, smallest q, largest sigma
-        S_MIN = bounds['n'][0] * math.log2(bounds['q'][0]) / (2 * math.log2(bounds['sigma'][1]) + 1)
-        # Maximum security: largest n, largest q, smallest sigma  
-        S_MAX = bounds['n'][1] * math.log2(bounds['q'][1]) / (2 * math.log2(bounds['sigma'][0]) + 1)
-        
-        # Minimum cost: smallest n, smallest q
-        C_MIN = bounds['n'][0]**2 * math.log2(bounds['q'][0])
-        # Maximum cost: largest n, largest q
-        C_MAX = bounds['n'][1]**2 * math.log2(bounds['q'][1])
-
-        # Normalize security and cost to 0-1 range
-        security_normalized = max(0, min(1, (security_bits - S_MIN) / (S_MAX - S_MIN)))
-        cost_normalized = max(0, min(1, (cost - C_MIN) / (C_MAX - C_MIN)))
-
-        # Combined fitness (scaled to 0-100 for better visibility)
-        alpha = self.model.alpha  # Security weight
-        beta = self.model.beta    # Cost weight
-        
-        # Scale to 0-100 range for better visualization
-        fitness = 100 * (alpha * security_normalized - beta * cost_normalized)
+        # Scale 0-100
+        # Emphasis: If security is very low (<80 bits), the score should suffer
+        fitness = 100 * (alpha * sec_norm - beta * cost_norm)
         
         return fitness
 

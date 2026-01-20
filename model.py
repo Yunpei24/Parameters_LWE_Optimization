@@ -260,25 +260,37 @@ class CryptoOptimizationModel(mesa.Model):
     
     def get_security_level(self, params):
         """
-        Estimate security level in bits for given parameters.
-        
-        Note: This uses a simplified formula that gives values in the range
-        of 500-9000 "bits". These are not realistic security bits, but rather
-        a metric for optimization purposes.
+        Estimate security level using Lindner-Peikert approximation.
         
         Args:
             params: Dict with 'n', 'q', 'sigma'
         
         Returns:
-            float: Estimated security metric (not capped)
+            float: Estimated security in bits
         """
         n = params['n']
         q = params['q']
         sigma = params['sigma']
         
-        # Simplified security estimation (uncapped for proper normalization)
-        security_bits = (n * math.log2(q)) / (2 * math.log2(sigma) + 1)
-        return security_bits
+        # Re-use the logic from Agent class (duplication for access from model)
+        if sigma <= 0 or q <= 0 or n <= 0:
+            return 0
+            
+        try:
+            log2_q = math.log2(q)
+            if q <= sigma: return 0 # Degenerate case
+            
+            log2_ratio = math.log2(q / sigma)
+            
+            # Root Hermite Factor log
+            log2_delta = (log2_ratio ** 2) / (4 * n * log2_q)
+            
+            if log2_delta <= 0: return 0
+            security_bits = (1.8 / log2_delta) - 110
+            
+            return max(0, security_bits)
+        except:
+            return 0
     
     def get_performance_cost(self, params):
         """
