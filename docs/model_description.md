@@ -59,7 +59,6 @@ This estimates the computational complexity (in bits) required to break the cryp
 **Cost Component:**
 $$C(n, q) = \ n^2 \cdot \log_2(q)$$
 
-This represents the normalized computational cost for encryption/decryption operations.
 
 **Weight Parameters:**
 - α ∈ [0,1]: Security weight (default: 0.7)

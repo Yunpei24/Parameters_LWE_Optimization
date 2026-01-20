@@ -70,6 +70,9 @@ class CryptoOptimizationModel(mesa.Model):
         # Setup communication network
         self.setup_communication_topology()
         
+        # Initialize global best from initial positions
+        self.update_global_best()
+        
         # Data collection
         self.datacollector = mesa.DataCollector(
             model_reporters={
@@ -95,17 +98,24 @@ class CryptoOptimizationModel(mesa.Model):
     def _create_agents(self):
         """
         Create explorer agents with random initial positions.
+        
+        Agents start with low-to-medium parameters to allow visible progression
+        during optimization (rather than starting near optimal values).
         """
         for i in range(self.n_explorers):
-            # Random initialization in parameter space
+            # Start with smaller values to see progression
+            # n: favor smaller values initially (256 or 512)
+            # q: start in lower-middle range (3000-5000)
+            # sigma: start in middle-upper range (2.5-4.0)
             initial_params = {
-                'n': random.choice([256, 512, 1024, 2048]),
-                'q': random.randint(2048, 8192),
-                'sigma': random.uniform(2.0, 5.0)
+                'n': random.choice([256, 256, 512, 512, 1024]),  # 40% chance of 256, 40% of 512, 20% of 1024
+                'q': random.randint(3000, 5000),  # Lower-middle range
+                'sigma': random.uniform(2.5, 4.0)  # Middle-upper range
             }
             
             # Variable inertia for diversity
-            inertia = random.uniform(0.5, 0.9)
+            # Reduced range (0.4-0.7) to slow down convergence and prevent boundary rushing
+            inertia = random.uniform(0.4, 0.7)
             
             agent = ExplorerAgent(
                 model=self,
@@ -217,14 +227,34 @@ class CryptoOptimizationModel(mesa.Model):
         Returns:
             float: Convergence rate (0-1)
         """
-        if self.global_best_fitness <= 0:
+        if not self.schedule.agents:
             return 0
         
-        threshold = 0.9 * self.global_best_fitness
-        converged_agents = sum(
-            1 for agent in self.schedule.agents 
-            if agent.fitness_personal >= threshold
-        )
+        # Handle case where global_best_fitness is negative or zero
+        if self.global_best_fitness <= 0:
+            # Use distance from worst instead
+            fitness_values = [agent.fitness_personal for agent in self.schedule.agents]
+            if not fitness_values:
+                return 0
+            worst_fitness = min(fitness_values)
+            fitness_range = self.global_best_fitness - worst_fitness
+            
+            if fitness_range <= 0:
+                return 1.0  # All agents have same fitness
+            
+            # Count agents within 10% of the range from the best
+            threshold = self.global_best_fitness - 0.1 * fitness_range
+            converged_agents = sum(
+                1 for agent in self.schedule.agents 
+                if agent.fitness_personal >= threshold
+            )
+        else:
+            # Original logic for positive fitness
+            threshold = 0.9 * self.global_best_fitness
+            converged_agents = sum(
+                1 for agent in self.schedule.agents 
+                if agent.fitness_personal >= threshold
+            )
         
         return converged_agents / len(self.schedule.agents)
     
@@ -232,19 +262,23 @@ class CryptoOptimizationModel(mesa.Model):
         """
         Estimate security level in bits for given parameters.
         
+        Note: This uses a simplified formula that gives values in the range
+        of 500-9000 "bits". These are not realistic security bits, but rather
+        a metric for optimization purposes.
+        
         Args:
             params: Dict with 'n', 'q', 'sigma'
         
         Returns:
-            float: Estimated security in bits
+            float: Estimated security metric (not capped)
         """
         n = params['n']
         q = params['q']
         sigma = params['sigma']
         
-        # Simplified security estimation
+        # Simplified security estimation (uncapped for proper normalization)
         security_bits = (n * math.log2(q)) / (2 * math.log2(sigma) + 1)
-        return max(0, min(security_bits, 512))
+        return security_bits
     
     def get_performance_cost(self, params):
         """

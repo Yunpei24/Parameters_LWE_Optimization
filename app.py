@@ -333,13 +333,17 @@ def ParameterSpace2D():
     if model_instance.value.global_best_params:
         best = model_instance.value.global_best_params
         ax.scatter(best['q'], best['sigma'], 
-                  marker='*', s=800, c='red', 
+                  marker='*', s=250, c='red', 
                   edgecolors='darkred', linewidth=2,
                   label='Global Best', zorder=5)
     
     # Add colorbar
     cbar = plt.colorbar(scatter, ax=ax)
     cbar.set_label('Fitness', rotation=270, labelpad=20)
+    
+    # Fix axes limits to show full parameter space (prevents agents from "disappearing")
+    ax.set_xlim(2000, 8500)  # q bounds with margin
+    ax.set_ylim(1.8, 5.2)    # sigma bounds with margin
     
     ax.set_xlabel('q (Modulus)', fontsize=12, fontweight='bold')
     ax.set_ylabel('σ (Noise Std)', fontsize=12, fontweight='bold')
@@ -396,7 +400,7 @@ def ParameterSpace3D():
     if model_instance.value.global_best_params:
         best = model_instance.value.global_best_params
         ax.scatter(best['n'], best['q'], best['sigma'],
-                  marker='*', s=800, c='red', 
+                  marker='*', s=250, c='red', 
                   edgecolors='darkred', linewidth=2,
                   label='Global Best', zorder=5)
     
@@ -406,6 +410,11 @@ def ParameterSpace3D():
     ax.set_zlabel('σ (Noise)', fontsize=11, fontweight='bold')
     ax.set_title(f'3D Agent Trajectories (Step {latest_step})', 
                 fontsize=14, fontweight='bold', pad=20)
+    
+    # Fix axes limits to show full parameter space (prevents agents from "disappearing")
+    ax.set_xlim(200, 2100)   # n bounds with margin
+    ax.set_ylim(2000, 8500)  # q bounds with margin
+    ax.set_zlim(1.8, 5.2)    # sigma bounds with margin
     
     # Colorbar
     cbar = plt.colorbar(scatter, ax=ax, pad=0.1, shrink=0.8)
@@ -471,12 +480,12 @@ def Page():
                                 solara.Markdown(f"**n:** {params['n']}", style="margin: 0;")
                                 solara.Markdown(f"**q:** {params['q']}", style="margin: 0;")
                                 solara.Markdown(f"**σ:** {params['sigma']:.3f}", style="margin: 0;")
-                                solara.Markdown(f"🔐 **{security:.0f} bits**", style="margin: 0; color: #4CAF50; font-size: 1.1em;")
+                                solara.Markdown(f"🔐 **Security:** {security:.0f}", style="margin: 0; color: #4CAF50; font-size: 1.1em;")
                                 solara.Markdown(f"🎯 **Fitness:** {model_instance.value.global_best_fitness:.2f}", style="margin: 0; color: #2196F3; font-size: 1.1em;")
                         
                         # Info about PSO exploration
                         with solara.Row(style="margin-top: 10px;"):
-                            solara.Markdown("_ℹ️ Note: n stays at 256 (discrete values). PSO explores q and σ continuously._", style="font-size: 0.85em; color: #666; font-style: italic;")
+                            solara.Markdown("_ℹ️ Note: 'n' changes discretely (256→512→1024→2048). PSO explores 'q' and 'σ' continuously. Security is an optimization metric (not realistic bits)._", style="font-size: 0.85em; color: #666; font-style: italic;")
                 
                 # Main visualizations
                 with solara.Column(style="gap: 20px;"):

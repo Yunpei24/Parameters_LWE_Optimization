@@ -52,8 +52,8 @@ class ExplorerAgent(mesa.Agent):
         
         # PSO parameters
         self.inertia = inertia
-        self.cognitive_weight = 2.0  # Increased from 1.5 - more exploration
-        self.social_weight = 2.0     # Increased from 1.5 - more swarm behavior
+        self.cognitive_weight = 1.8  # Reduced from 2.0 for smoother convergence
+        self.social_weight = 1.8     # Reduced from 2.0 for smoother convergence
         
         # Communication
         self.neighbors_list = []
@@ -66,26 +66,14 @@ class ExplorerAgent(mesa.Agent):
         """
         Compute velocity limits for each parameter.
         
-        The k coefficients were empirically determined through a parametric study 
-        consisting of 50 runs across 8 tested values per parameter.
+        Reduced velocity limits to prevent agents from rushing to boundaries
+        and disappearing from visualization. These limits balance:
+        - Exploration: Agents can still search the parameter space
+        - Stability: Prevents wild oscillations and boundary collisions
+        - Visualization: Keeps agents visible in parameter space plots
         
-        Optimization criteria:
-        - Convergence speed (steps required to reach 90% of max fitness)
-        - Final quality (mean fitness over 50 runs)
-        - Stability (standard deviation of final fitness)
-        
-        Study results:
-        - k_n = 0.11: Best trade-off between convergence (72 steps) and stability.
-        - k_q = 0.08: Optimizes stability with acceptable convergence (85 steps).
-        - k_σ = 0.33: Enables rapid exploration of a less critical parameter.
-        
-        These values represent 8% to 33% of their respective ranges, aligning with 
-        standard PSO practices where values between 10% and 50% are typically 
-        recommended (Engelbrecht 2007).
-        
-        References:
-        - Engelbrecht, A.P. (2007). Computational Intelligence: An Introduction.
-        - Poli, R. et al. (2007). Particle swarm optimization: An overview.
+        Standard PSO practices recommend 10-20% of parameter range for V_max
+        to ensure stable convergence without premature boundary attraction.
         
         Returns:
             dict: Velocity limits (V_max) for each parameter.
@@ -93,16 +81,16 @@ class ExplorerAgent(mesa.Agent):
         bounds = self.model.bounds
         
         return {
-            'n': 0.11 * (bounds['n'][1] - bounds['n'][0]),
-            'q': 0.08 * (bounds['q'][1] - bounds['q'][0]),
-            'sigma': 0.33 * (bounds['sigma'][1] - bounds['sigma'][0])
+            'n': 0.15 * (bounds['n'][1] - bounds['n'][0]),      # ~270 per step
+            'q': 0.05 * (bounds['q'][1] - bounds['q'][0]),      # ~307 per step (reduced from 0.08)
+            'sigma': 0.15 * (bounds['sigma'][1] - bounds['sigma'][0])  # ~0.45 per step (reduced from 0.33)
         }
         
     def evaluate_fitness(self):
         """
         Evaluate the fitness of current parameters.
         
-        Fitness = α * Security - β * Cost
+        Fitness = α * Security - β * Cost (normalized to 0-100 scale)
         
         Returns:
             float: Fitness value (higher is better)
@@ -114,28 +102,44 @@ class ExplorerAgent(mesa.Agent):
         # Security estimation (simplified Lattice estimator)
         # Based on BKZ block size needed for attack
         # Security roughly scales with n * log(q) / log(sigma)
+        # NOTE: This formula gives values in range ~500-9000 bits (not realistic but used for optimization)
         security_bits = (n * math.log2(q)) / (2 * math.log2(sigma) + 1)
-        security_bits = max(0, min(security_bits, 512))  # Bound between 0-512
         
         # Performance cost (operations scale with n^2 * log(q))
         cost = (n ** 2) * math.log2(q)
 
-        S_MIN = self.model.bounds['n'][0] * math.log2(self.model.bounds['q'][0]) / (2 * math.log2(self.model.bounds['sigma'][1]) + 1)  # ≈ 499
-        S_MAX = self.model.bounds['n'][1] * math.log2(self.model.bounds['q'][1]) / (2 * math.log2(self.model.bounds['sigma'][0]) + 1)  # ≈ 
-        C_MIN = self.model.bounds['n'][0]**2 * math.log2(self.model.bounds['q'][0])
-        C_MAX = self.model.bounds['n'][1]**2 * math.log2(self.model.bounds['q'][1])  
+        # Calculate normalization bounds based on actual parameter space
+        # Using the model bounds to get realistic min/max values
+        bounds = self.model.bounds
 
-        # Normalize security and cost
-        security_bits = (security_bits - S_MIN) / (S_MAX - S_MIN)
-        cost = (cost - C_MIN) / (C_MAX - C_MIN)
+        # S_MIN = self.model.bounds['n'][0] * math.log2(self.model.bounds['q'][0]) / (2 * math.log2(self.model.bounds['sigma'][1]) + 1)
+        # S_MAX = self.model.bounds['n'][1] * math.log2(self.model.bounds['q'][1]) / (2 * math.log2(self.model.bounds['sigma'][0]) + 1)
+        # C_MIN = self.model.bounds['n'][0]**2 * math.log2(self.model.bounds['q'][0])
+        # C_MAX = self.model.bounds['n'][1]**2 * math.log2(self.model.bounds['q'][1])
+        
+        # Minimum security: smallest n, smallest q, largest sigma
+        S_MIN = bounds['n'][0] * math.log2(bounds['q'][0]) / (2 * math.log2(bounds['sigma'][1]) + 1)
+        # Maximum security: largest n, largest q, smallest sigma  
+        S_MAX = bounds['n'][1] * math.log2(bounds['q'][1]) / (2 * math.log2(bounds['sigma'][0]) + 1)
+        
+        # Minimum cost: smallest n, smallest q
+        C_MIN = bounds['n'][0]**2 * math.log2(bounds['q'][0])
+        # Maximum cost: largest n, largest q
+        C_MAX = bounds['n'][1]**2 * math.log2(bounds['q'][1])
 
-        # Combined fitness
+        # Normalize security and cost to 0-1 range
+        security_normalized = max(0, min(1, (security_bits - S_MIN) / (S_MAX - S_MIN)))
+        cost_normalized = max(0, min(1, (cost - C_MIN) / (C_MAX - C_MIN)))
+
+        # Combined fitness (scaled to 0-100 for better visibility)
         alpha = self.model.alpha  # Security weight
         beta = self.model.beta    # Cost weight
         
-        fitness = alpha * security_bits - beta * cost
+        # Scale to 0-100 range for better visualization
+        fitness = 100 * (alpha * security_normalized - beta * cost_normalized)
         
         return fitness
+
     
     def step(self):
         """
@@ -247,15 +251,9 @@ class ExplorerAgent(mesa.Agent):
             # Update velocity
             self.velocity[param] = (inertia_component + cognitive_component + social_component)
 
-            # Velocity clamping to prevent explosion
-            max_velocity = {
-                'n': 300,      # Increased from 200
-                'q': 1000,     # Increased from 500
-                'sigma': 0.5   # Decreased from 1.0 (was too large)
-            }
             self.velocity[param] = max(
-                -max_velocity[param],
-                min(self.velocity[param], max_velocity[param])
+                -self.v_limits[param],
+                min(self.velocity[param], self.v_limits[param])
             )
     
     def move(self):
