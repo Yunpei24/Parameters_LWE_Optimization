@@ -485,7 +485,7 @@ def Page():
                         
                         # Info about PSO exploration
                         with solara.Row(style="margin-top: 10px;"):
-                            solara.Markdown("_ℹ️ Note: 'n' changes discretely (256→512→1024→2048). PSO explores 'q' and 'σ' continuously. Security is an optimization metric (not realistic bits)._", style="font-size: 0.85em; color: #666; font-style: italic;")
+                            solara.Markdown("_ℹ️ Note: PSO explores 'q' and 'σ' continuously. Security is an optimization metric (not realistic bits)._", style="font-size: 0.85em; color: #666; font-style: italic;")
                 
                 # Main visualizations
                 with solara.Column(style="gap: 20px;"):
