@@ -26,6 +26,8 @@ This project implements a **multi-agent simulation** to optimize parameters for 
 - ✅ Multi-agent particle swarm optimization (PSO)
 - ✅ Multiple communication topologies (ring, random, all-to-all)
 - ✅ Real-time visualization with MESA
+- ✅ **DataCollector & Comprehensive Plots** - Track fitness, diversity, convergence
+- ✅ **Interactive Solara Visualization** - Modern web-based interface
 - ✅ Security vs. Performance trade-off analysis
 - ✅ Interactive parameter tuning
 
@@ -37,51 +39,125 @@ This project implements a **multi-agent simulation** to optimize parameters for 
 
 Lattice-based cryptographic schemes rely on the hardness of problems like **Learning With Errors (LWE)** and **Ring-LWE**. Key parameters include:
 
-- **n**: Lattice dimension (powers of 2: 256, 512, 1024, 2048)
-- **q**: Modulus (typically 2048-8192)
-- **σ (sigma)**: Standard deviation of Gaussian noise distribution
+| Parameter | Symbol | Typical Range | Role |
+|-----------|--------|---------------|------|
+| Lattice dimension | n | 256, 512, 1024, 2048 | Security foundation |
+| Modulus | q | 2048 - 8192 | Defines arithmetic |
+| Noise std. dev. | σ | 2.0 - 5.0 | Error distribution |
 
-### Security-Performance Trade-off
+### The LWE Problem
 
-The fitness function balances two objectives:
+Given samples (aᵢ, bᵢ) where:
 
 ```
-F(n, q, σ) = α × Security(n, q, σ) - β × Cost(n, q, σ)
+bᵢ = ⟨aᵢ, s⟩ + eᵢ (mod q)
+```
+
+with aᵢ ← Zqⁿ, secret s ← χₛ, and error eᵢ ← N(0, σ²), the LWE problem asks to recover s.
+
+### Security Estimation
+
+#### Lindner-Peikert Approximation (Implemented)
+
+We use the **Root Hermite Factor** (δ) to estimate security against BKZ lattice attacks:
+
+```
+log₂(δ) ≈ log₂²(q/σ) / (4 × n × log₂(q))
+```
+
+Then security in bits:
+
+```
+Security_bits ≈ 1.8 / log₂(δ) - 110
+```
+
+**Key relationships:**
+- Security **increases** with n (dimension)
+- Security **increases** with σ (noise)
+- Security **decreases** with q (modulus)
+
+#### Correctness Constraint
+
+For valid decryption, the noise must remain bounded:
+
+```
+q > 4 × σ × √n
+```
+
+If this condition fails, the cryptosystem cannot decrypt correctly. In our model, invalid configurations receive a **fitness penalty of -100**.
+
+### Performance Cost Model
+
+Computational cost is approximated by polynomial operations:
+
+```
+Cost(n, q) = n² × log₂(q)
+```
+
+This reflects:
+- Matrix operations scale as O(n²)
+- Modular arithmetic depends on log₂(q)
+
+### Multi-Objective Fitness Function
+
+The optimization balances security and performance:
+
+```
+F(n, q, σ) = α × S_norm - β × C_norm    [if correct]
+F(n, q, σ) = -100                        [if invalid]
 ```
 
 Where:
-
-**Security Estimation:**
-```
-Security(bits) = (n × log₂(q)) / (2 × log₂(σ) + 1)
-```
-
-**Performance Cost:**
-```
-Cost = (n² × log₂(q)) / 10⁶
-```
-
-**Parameters:**
-- α ∈ [0,1]: Weight for security (default: 0.7)
-- β ∈ [0,1]: Weight for cost (default: 0.3)
-- α + β = 1 for normalized weighting
+- **α ∈ [0,1]**: Security weight (default: 0.7)
+- **β = 1 - α**: Cost weight (default: 0.3)
+- **S_norm**: Security normalized to [0, 1] over range [0, 300] bits
+- **C_norm**: Cost normalized to [0, 1] over parameter bounds
 
 ### Particle Swarm Optimization (PSO)
 
-Each agent updates its position using:
+Each agent i updates its velocity and position at time t:
 
 ```
-v(t+1) = w·v(t) + c₁·r₁·(pbest - x(t)) + c₂·r₂·(nbest - x(t))
+v(t+1) = w·v(t) + c₁·r₁·(p_best - x(t)) + c₂·r₂·(n_best - x(t))
 x(t+1) = x(t) + v(t+1)
 ```
 
-Where:
-- **w**: Inertia weight (0.5-0.9) - maintains momentum
-- **c₁**: Cognitive coefficient (1.5) - attraction to personal best
-- **c₂**: Social coefficient (1.5) - attraction to neighbors' best
-- **r₁, r₂**: Random values ∈ [0,1]
-- **pbest**: Personal best position
-- **nbest**: Best position among neighbors
+#### PSO Parameters
+
+| Parameter | Symbol | Value | Purpose |
+|-----------|--------|-------|---------|
+| Inertia weight | w | [0.4, 0.7] | Momentum control |
+| Cognitive coefficient | c₁ | 1.8 | Personal best attraction |
+| Social coefficient | c₂ | 1.8 | Neighborhood best attraction |
+| Random factors | r₁, r₂ | U(0,1) | Stochastic exploration |
+
+#### Stability Condition (Clerc & Kennedy, 2002)
+
+For convergence guarantee with φ = c₁ + c₂:
+- Our configuration: φ = 3.6 < 4 ✓
+- This ensures stable behavior without requiring constriction coefficients
+
+#### Velocity Limits
+
+To prevent divergence, velocities are bounded:
+
+| Parameter | Factor k | V_max |
+|-----------|----------|-------|
+| n | 0.15 | ~270 |
+| q | 0.05 | ~307 |
+| σ | 0.15 | ~0.45 |
+
+### Convergence Metrics
+
+**Population Diversity:**
+```
+D(t) = √(1/N × Σ(nᵢ(t) - n̄(t))²)
+```
+
+**Convergence Rate:**
+```
+CR(t) = |{i : Fᵢ(t) ≥ 0.9 × F_best(t)}| / N × 100%
+```
 
 ---
 
@@ -124,29 +200,29 @@ Where:
 
 ### Communication Topologies
 
-#### 1. Ring Topology
+#### 1. Ring Topology (k=2)
 ```
-Agent 0 ← → Agent 1 ← → Agent 2 ← → ... ← → Agent N-1 ← → Agent 0
+N_i = {(i-1) mod N, (i+1) mod N}
 ```
-- Each agent has 2 neighbors (left and right)
-- Balanced between information spread and diversity
-- Slower convergence but better exploration
+- Degree: 2 for all agents
+- Information spread: O(N) steps
+- Best for: Exploration, avoiding premature convergence
 
-#### 2. Random Topology
+#### 2. Random Topology (k=4)
 ```
-Agents connected to 4 random neighbors each
+N_i ~ Uniform({1, ..., N} \ {i}, 4)
 ```
-- Stochastic communication patterns
-- Good balance of exploration/exploitation
-- Robust to local optima
+- Degree: 4 (fixed)
+- Information spread: O(log N) expected
+- Best for: Balanced exploration/exploitation
 
-#### 3. All-to-All Topology
+#### 3. All-to-All Topology (k=N-1)
 ```
-Every agent connected to every other agent
+N_i = {1, ..., N} \ {i}
 ```
-- Maximum information sharing
-- Fastest convergence
-- Risk of premature convergence
+- Degree: N-1
+- Information spread: O(1) (immediate)
+- Best for: Fast convergence, time-critical optimization
 
 ---
 
@@ -172,7 +248,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install mesa numpy matplotlib pandas
+pip install -r requirements.txt
 
 # Verify installation
 python -c "import mesa; print(f'MESA version: {mesa.__version__}')"
@@ -192,13 +268,13 @@ python run.py
 
 This will:
 - Run 100 steps of optimization
-- Generate plots of results
-- Save plots as PNG files
-- Print optimization summary
+- Generate comprehensive plots of results
+- Save plots as PNG files (optimization_results.png)
+- Print optimization summary with best parameters
 
-### 2. Interactive Visualization (Browser)
+### 2. Interactive Visualization - Mesa Server (Browser)
 
-Launch the web-based interface:
+Launch the traditional Mesa web-based interface:
 
 ```bash
 python server.py
@@ -216,7 +292,29 @@ http://127.0.0.1:8521/
 - Start/Stop/Reset simulation
 - Watch real-time convergence
 
-### 3. Custom Experiments
+### 3. Interactive Visualization - Solara (Modern UI) ⭐ NEW
+
+Launch the modern Solara interactive interface:
+
+```bash
+solara run app.py
+```
+
+Then open your browser to:
+```
+http://localhost:8765/
+```
+
+**Features:**
+- ✨ Modern, responsive UI
+- 📊 Real-time charts and metrics
+- 🎮 Interactive controls (Reset, Step, Run/Pause)
+- 📈 Live fitness evolution tracking
+- 🔄 Population diversity monitoring
+- 📉 Convergence rate visualization
+- ⚙️ Parameter evolution over time
+
+### 4. Custom Experiments
 
 #### Example: Compare Topologies
 
@@ -255,46 +353,34 @@ results = model.get_results_summary()
 
 ## 📊 Results and Analysis
 
-### Expected Outcomes
+### Optimization Phases
 
-#### Phase 1: Exploration (Steps 0-30)
-- High diversity in agent positions
-- Rapid fitness improvements
-- Agents spread across parameter space
-
-#### Phase 2: Convergence (Steps 30-70)
-- Diversity decreases
-- Fitness improvements slow down
-- Agents cluster around promising regions
-
-#### Phase 3: Exploitation (Steps 70-100)
-- Low diversity
-- Fine-tuning of best solutions
-- High convergence rate (>80%)
+| Phase | Steps | Diversity | Fitness Change | Behavior |
+|-------|-------|-----------|----------------|----------|
+| Exploration | 0-30 | High | Rapid improvement | Space coverage |
+| Transition | 30-70 | Decreasing | Moderate gains | Clustering |
+| Exploitation | 70-100 | Low | Fine-tuning | Convergence |
 
 ### Typical Results
 
 For **α=0.7, β=0.3, Ring topology, 20 agents, 100 steps:**
 
-```
-Best Parameters Found:
-  n (dimension):     1024
-  q (modulus):       6143
-  σ (noise std):     3.142
+| Metric | Value |
+|--------|-------|
+| Best n | 1024 |
+| Best q | ~6000 |
+| Best σ | ~3.2 |
+| Security (Lindner-Peikert) | ~150-180 bits |
+| Convergence Rate | 85% |
 
-Performance Metrics:
-  Security Level:    158.3 bits
-  Performance Cost:  65.47
-  Best Fitness:      98.36
-  Convergence Rate:  85.0%
-```
+### Security Interpretation
 
-### Interpretation
+With the Lindner-Peikert model:
+- **n=512**: ~80-100 bits (minimum post-quantum)
+- **n=1024**: ~150-200 bits (recommended)
+- **n=2048**: ~250+ bits (high security)
 
-- **n=1024**: Provides strong security without excessive cost
-- **q≈6000**: Balanced modulus for operations
-- **σ≈3.14**: Optimal noise for security/correctness trade-off
-- **158 bits security**: Post-quantum resistant (>128 bits recommended)
+> ⚠️ These are **analytical approximations**. For production systems, use the full [Lattice Estimator](https://github.com/malb/lattice-estimator).
 
 ### Topology Comparison
 
@@ -387,26 +473,25 @@ if self.current_params['n'] * self.current_params['q'] > MAX_MEMORY:
 
 ### Lattice-Based Cryptography
 
-1. **CRYSTALS-Kyber**: Post-quantum key encapsulation mechanism
-   - https://pq-crystals.org/kyber/
+1. Regev, O. (2009). *On lattices, learning with errors, random linear codes, and cryptography*. Journal of the ACM.
 
-2. **NTRU**: Classic lattice-based encryption
-   - https://ntru.org/
+2. Lindner, R., & Peikert, C. (2011). *Better key sizes (and attacks) for LWE-based encryption*. CT-RSA.
 
-3. **Learning With Errors (LWE)**
-   - Regev, O. (2009). "On lattices, learning with errors, random linear codes, and cryptography"
+3. Albrecht, M. R., et al. (2015). *On the concrete hardness of Learning with Errors*. Journal of Mathematical Cryptology.
+
+4. NIST Post-Quantum Cryptography Standardization. https://csrc.nist.gov/projects/post-quantum-cryptography
 
 ### Particle Swarm Optimization
 
-4. Kennedy, J., & Eberhart, R. (1995). "Particle swarm optimization"
+5. Kennedy, J., & Eberhart, R. (1995). *Particle swarm optimization*. IEEE ICNN.
 
-5. Shi, Y., & Eberhart, R. (1998). "A modified particle swarm optimizer"
+6. Clerc, M., & Kennedy, J. (2002). *The particle swarm - explosion, stability, and convergence*. IEEE Trans. Evolutionary Computation.
+
+7. Shi, Y., & Eberhart, R. (1998). *A modified particle swarm optimizer*. IEEE World Congress on Computational Intelligence.
 
 ### Multi-Agent Systems
 
-6. **MESA Documentation**: https://mesa.readthedocs.io/
-
-7. Wilensky, U. (1999). NetLogo. http://ccl.northwestern.edu/netlogo/
+8. **MESA Documentation**: https://mesa.readthedocs.io/
 
 ---
 
@@ -416,43 +501,38 @@ This project demonstrates:
 
 1. **Multi-Agent Systems**: Autonomous agents with local rules producing global behavior
 2. **Swarm Intelligence**: Collective problem-solving without centralized control
-3. **Cryptographic Engineering**: Practical parameter selection for security systems
-4. **Trade-off Analysis**: Balancing competing objectives (security vs. performance)
+3. **Cryptographic Engineering**: Practical parameter selection for post-quantum security
+4. **Multi-Objective Optimization**: Balancing security vs. performance trade-offs
 5. **Simulation & Modeling**: Using computational models to study complex systems
 
 ---
 
 ## 📝 License
 
-MIT License - feel free to use for academic or commercial projects.
+MIT License - free for academic and commercial use.
 
 ---
 
 ## 👥 Contributors
 
-- Your Name - Initial implementation
-- Course: Mathematical Models of Complexity
+- Joshua Justeyu Peinikiema - Implementation
+- Course: Mathematical Models of Complexity (PhD UM6P)
 
 ---
 
-## 🐛 Known Issues & Future Work
+## 🐛 Known Limitations & Future Work
 
-### Known Issues
-- Parameter 'q' should ideally be prime, currently any integer accepted
-- Security estimation is simplified (doesn't account for specific attacks)
+### Current Limitations
+- Security estimation uses Lindner-Peikert approximation (not full Lattice Estimator)
+- Parameter q should ideally be prime (currently any integer)
+- Discrete parameter n handled with rounding
 
-### Future Work
-- [ ] Integrate real lattice attack estimators
-- [ ] Add adversarial agents (attackers)
-- [ ] Implement hybrid PSO-Genetic Algorithm
-- [ ] Support for more cryptographic schemes (FHE, signatures)
-- [ ] GPU acceleration for large-scale simulations
-
----
-
-## 📧 Contact
-
-For questions or suggestions, please open an issue on GitHub or contact [your-email].
+### Future Improvements
+- [ ] Integrate LWE Estimator for production-grade security assessment
+- [ ] Implement Pareto-optimal multi-objective optimization
+- [ ] Add adversarial agents (attacker model)
+- [ ] GPU acceleration for large swarms
+- [ ] Support Ring-LWE and Module-LWE variants
 
 ---
 
