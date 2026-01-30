@@ -515,8 +515,10 @@ MIT License - free for academic and commercial use.
 
 ## 👥 Contributors
 
-- Joshua Justeyu Peinikiema - Implementation
-- Course: Mathematical Models of Complexity (PhD UM6P)
+- Jean Gabriel AGAPKA VIGNO
+- Joshua Juste Emmanuel Yun Pei NIKIEMA
+
+- Course: Mathematical Models of Complexity: Modeling & Simulation (PhD UM6P)
 
 ---
 
